@@ -1,232 +1,60 @@
 #![feature(oneshot_channel)]
-use anyhow::{Result, anyhow};
+use anyhow::{Result, bail};
+use log::debug;
 use std::{
-    collections::HashMap,
-    hash::{DefaultHasher, Hash, Hasher},
-    sync::{mpsc, oneshot},
-    thread,
+    io::{BufRead, BufReader, BufWriter, Write},
+    net::TcpStream,
+    str::FromStr,
+    sync::Arc,
 };
 
-const MAX_BATCH_SIZE: usize = 64;
+mod backend;
+pub use crate::backend::BBStore;
 
-struct BBStoreBackend<K, V> {
-    mem: HashMap<K, V>,
+pub enum ClientCommand {
+    Get { key: String },
+    Insert { key: String, value: String },
 }
 
-impl<K, V> Default for BBStoreBackend<K, V> {
-    fn default() -> Self {
-        Self {
-            mem: HashMap::default(),
+impl FromStr for ClientCommand {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let words: Vec<&str> = s.splitn(3, ' ').collect();
+        match words.as_slice() {
+            ["GET", key] => Ok(ClientCommand::Get {
+                key: key.to_string(),
+            }),
+            ["SET", key, value] => Ok(ClientCommand::Insert {
+                key: key.to_string(),
+                value: value.to_string(),
+            }),
+            [cmd, ..] => bail!("Unknown command {}", cmd),
+            [] => bail!("Empty command"),
         }
     }
 }
 
-pub enum Command {
-    Write {
-        key: String,
-        value: String,
-        ack: oneshot::Sender<()>,
-    },
-    Read {
-        key: String,
-        reply: oneshot::Sender<Option<String>>,
-    },
-}
+pub fn handle_connection(stream: TcpStream, store: Arc<BBStore>) -> Result<()> {
+    let mut writer = BufWriter::new(&stream);
+    let reader = BufReader::new(&stream);
 
-fn actor_loop(rx: mpsc::Receiver<Command>, shard: &mut BBStoreBackend<String, String>) {
-    loop {
-        let first = match rx.recv() {
-            Ok(cmd) => cmd,
-            Err(_) => return,
+    for line in reader.lines() {
+        let line = line?;
+        debug!("Received {}", line);
+        let response: String = match ClientCommand::from_str(&line)? {
+            ClientCommand::Get { key } => match store.get(key)? {
+                Some(value) => format!("{}\n", value),
+                None => "nil\n".to_string(),
+            },
+            ClientCommand::Insert { key, value } => {
+                store.insert(key, value)?;
+                "ok\n".to_string()
+            }
         };
-
-        let mut batch = Vec::with_capacity(MAX_BATCH_SIZE);
-        batch.push(first);
-
-        while batch.len() < MAX_BATCH_SIZE {
-            match rx.try_recv() {
-                Ok(cmd) => batch.push(cmd),
-                Err(_) => break,
-            }
-        }
-
-        for cmd in batch {
-            match cmd {
-                Command::Write { key, value, ack } => {
-                    shard.mem.insert(key, value);
-                    let _ = ack.send(());
-                }
-                Command::Read { key, reply } => {
-                    let value = shard.mem.get(&key).cloned();
-                    let _ = reply.send(value);
-                }
-            }
-        }
-    }
-}
-
-pub struct BBStore {
-    channels: Vec<mpsc::Sender<Command>>,
-    num_shards: usize,
-}
-
-impl BBStore {
-    pub fn new(num_shards: usize) -> Self {
-        let mut channels = Vec::new();
-        for _ in 0..num_shards {
-            let (tx, rx) = mpsc::channel::<Command>();
-            thread::spawn(move || {
-                actor_loop(rx, &mut BBStoreBackend::default());
-            });
-            channels.push(tx);
-        }
-
-        Self {
-            channels,
-            num_shards,
-        }
+        writer.write_all(response.as_bytes())?;
+        writer.flush()?;
     }
 
-    pub fn insert(&self, key: String, value: String) -> Result<()> {
-        let shard_key = self.shard_index(&key);
-        let tx = self.channels[shard_key].clone();
-
-        let (ack_tx, ack_rx) = oneshot::channel();
-        tx.send(Command::Write {
-            key,
-            value,
-            ack: ack_tx,
-        })?;
-
-        ack_rx.recv()?;
-
-        Ok(())
-    }
-
-    pub fn get(&self, key: String) -> Result<Option<String>> {
-        let shard_key = self.shard_index(&key);
-        let tx = self.channels[shard_key].clone();
-
-        let (ack_tx, ack_rx) = oneshot::channel();
-        tx.send(Command::Read { key, reply: ack_tx })?;
-
-        ack_rx.recv().map_err(|e| anyhow!(e))
-    }
-
-    fn shard_index(&self, key: &str) -> usize {
-        let mut hasher = DefaultHasher::new();
-        key.hash(&mut hasher);
-        hasher.finish() as usize % self.num_shards
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::thread;
-
-    fn spawn_shard() -> mpsc::Sender<Command> {
-        let (tx, rx) = mpsc::channel::<Command>();
-        thread::spawn(move || {
-            actor_loop(rx, &mut BBStoreBackend::default());
-        });
-        tx
-    }
-
-    #[test]
-    fn test_write_then_read() {
-        let tx = spawn_shard();
-
-        // Write
-        let (ack_tx, ack_rx) = oneshot::channel();
-        tx.send(Command::Write {
-            key: "name".into(),
-            value: "alice".into(),
-            ack: ack_tx,
-        })
-        .unwrap();
-        ack_rx.recv().unwrap(); // wait for the actor to process it
-
-        // Read
-        let (reply_tx, reply_rx) = oneshot::channel();
-        tx.send(Command::Read {
-            key: "name".into(),
-            reply: reply_tx,
-        })
-        .unwrap();
-
-        assert_eq!(reply_rx.recv().unwrap(), Some("alice".into()));
-    }
-
-    #[test]
-    fn test_missing_key_returns_none() {
-        let tx = spawn_shard();
-
-        let (reply_tx, reply_rx) = oneshot::channel();
-        tx.send(Command::Read {
-            key: "ghost".into(),
-            reply: reply_tx,
-        })
-        .unwrap();
-
-        assert_eq!(reply_rx.recv().unwrap(), None);
-    }
-
-    #[test]
-    fn test_overwrite() {
-        let tx = spawn_shard();
-
-        for value in ["alice", "bob", "carol"] {
-            let (ack_tx, ack_rx) = oneshot::channel();
-            tx.send(Command::Write {
-                key: "name".into(),
-                value: value.into(),
-                ack: ack_tx,
-            })
-            .unwrap();
-            ack_rx.recv().unwrap();
-        }
-
-        let (reply_tx, reply_rx) = oneshot::channel();
-        tx.send(Command::Read {
-            key: "name".into(),
-            reply: reply_tx,
-        })
-        .unwrap();
-
-        assert_eq!(reply_rx.recv().unwrap(), Some("carol".into()));
-    }
-
-    #[test]
-    fn test_batch_of_writes() {
-        let tx = spawn_shard();
-
-        // Fire all writes without waiting for acks — this exercises natural batching
-        let acks: Vec<_> = (0..100)
-            .map(|i| {
-                let (ack_tx, ack_rx) = oneshot::channel();
-                tx.send(Command::Write {
-                    key: format!("key_{i}"),
-                    value: format!("val_{i}"),
-                    ack: ack_tx,
-                })
-                .unwrap();
-                ack_rx
-            })
-            .collect();
-
-        // Now wait for all acks
-        for ack in acks {
-            ack.recv().unwrap();
-        }
-
-        // Spot check
-        let (reply_tx, reply_rx) = oneshot::channel();
-        tx.send(Command::Read {
-            key: "key_42".into(),
-            reply: reply_tx,
-        })
-        .unwrap();
-        assert_eq!(reply_rx.recv().unwrap(), Some("val_42".into()));
-    }
+    Ok(())
 }
