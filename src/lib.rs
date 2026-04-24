@@ -9,6 +9,11 @@ use tokio::net::TcpStream;
 mod backend;
 pub use crate::backend::BBStore;
 
+pub const DEFAULT_CONFIG_FILEPATH: &str = "/etc/bbstore/bbstore.conf";
+pub const DEFAULT_ADDRESS: &str = "127.0.0.1";
+pub const DEFAULT_PORT: usize = 8080;
+pub const DEFAULT_NUM_SHARDS: usize = 4;
+
 pub enum ClientCommand {
     Get { key: String },
     Insert { key: String, value: String },

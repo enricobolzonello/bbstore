@@ -2,14 +2,12 @@ use std::{io::Read, sync::Arc};
 use tokio::net::TcpListener;
 
 use anyhow::Result;
-use bbstore::{BBStore, BBStoreConfig, handle_connection};
+use bbstore::{
+    BBStore, BBStoreConfig, DEFAULT_ADDRESS, DEFAULT_CONFIG_FILEPATH, DEFAULT_NUM_SHARDS,
+    DEFAULT_PORT, handle_connection,
+};
 use clap::Parser;
 use log::info;
-
-const DEFAULT_CONFIG_FILEPATH: &str = "/etc/bbstore/bbstore.conf";
-const DEFAULT_ADDRESS: &str = "127.0.0.1";
-const DEFAULT_PORT: usize = 8080;
-const DEFAULT_NUM_SHARDS: usize = 4;
 
 /// BB(BasicBolzo)-Store
 /// Simple key-value store to practice single writer principles
