@@ -26,6 +26,7 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
     let listener = TcpListener::bind(format!("{}:{}", args.address, args.port))?;
+    listener.set_nonblocking(true)?;
     env_logger::init();
 
     let store = Arc::new(BBStore::new(args.num_shards));
