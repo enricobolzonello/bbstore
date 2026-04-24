@@ -25,6 +25,33 @@ pub struct BBStoreConfig {
     pub buffer_size: usize,
 }
 
+async fn process_command(cmd: Command, store: &Arc<BBStore>) -> Result<String> {
+    let rtn = match cmd {
+        Command::Get { key } => match store.get(key).await? {
+            Some(value) => format!("{}\n", value),
+            None => "nil\n".to_string(),
+        },
+        Command::Set { key, value } => {
+            store.insert(key, value).await?;
+            "ok\n".to_string()
+        }
+        Command::Config(_subcommand) => {
+            // for now i can assume that the command
+            // will be REWRITE (since i handle it in parsing)
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(DEFAULT_CONFIG_FILEPATH)
+                .await?;
+            file.write(toml::to_string_pretty(&store.config())?.as_bytes())
+                .await?;
+            "ok\n".to_string()
+        }
+    };
+
+    Ok(rtn)
+}
+
 pub async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Result<()> {
     let (read_half, write_half) = stream.split();
     let mut writer = BufWriter::new(write_half);
@@ -33,27 +60,9 @@ pub async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Re
     let mut lines = reader.lines();
     while let Some(line) = lines.next_line().await? {
         debug!("Received {}", line);
-        let response: String = match Command::from_str(&line)? {
-            Command::Get { key } => match store.get(key).await? {
-                Some(value) => format!("{}\n", value),
-                None => "nil\n".to_string(),
-            },
-            Command::Set { key, value } => {
-                store.insert(key, value).await?;
-                "ok\n".to_string()
-            }
-            Command::Config(_subcommand) => {
-                // for now i can assume that the command
-                // will be REWRITE (since i handle it in parsing)
-                let mut file = OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .open(DEFAULT_CONFIG_FILEPATH)
-                    .await?;
-                file.write(toml::to_string_pretty(&store.config())?.as_bytes())
-                    .await?;
-                "ok\n".to_string()
-            }
+        let response: String = match process_command(Command::from_str(&line)?, &store).await {
+            Ok(r) => r,
+            Err(e) => format!("ERR {}\n", e), // TODO: probably i should split between non-recoverable errors and user errors
         };
         writer.write_all(response.as_bytes()).await?;
         writer.flush().await?;
