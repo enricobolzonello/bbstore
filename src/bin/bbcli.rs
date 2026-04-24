@@ -1,10 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
-use std::{
-    fmt,
-    io::{BufRead, BufReader, Write},
-    net::TcpStream,
-};
+use std::fmt;
+
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
 
 #[derive(Clone, ValueEnum, Debug)]
 enum InputCommands {
@@ -33,15 +32,16 @@ struct Args {
     value: Option<String>,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
-    let mut writer = TcpStream::connect("127.0.0.1:8080")?; // TODO: global config file to set the same ip address as the store
+    let mut writer = TcpStream::connect("127.0.0.1:8080").await?; // TODO: global config file to set the same ip address as the store
     let value_part = args.value.map(|v| format!(" {}", v)).unwrap_or_default();
     let command = format!("{} {}{}\n", args.command, args.key, value_part);
-    writer.write_all(command.as_bytes())?;
+    writer.write_all(command.as_bytes()).await?;
 
     let mut response = String::new();
-    BufReader::new(&writer).read_line(&mut response)?;
+    BufReader::new(writer).read_line(&mut response).await?;
 
     print!("{}", response);
 

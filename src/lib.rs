@@ -1,12 +1,9 @@
 #![feature(oneshot_channel)]
 use anyhow::{Result, bail};
 use log::debug;
-use std::{
-    io::{BufRead, BufReader, BufWriter, Write},
-    net::TcpStream,
-    str::FromStr,
-    sync::Arc,
-};
+use std::{str::FromStr, sync::Arc};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::net::TcpStream;
 
 mod backend;
 pub use crate::backend::BBStore;
@@ -35,12 +32,13 @@ impl FromStr for ClientCommand {
     }
 }
 
-pub fn handle_connection(stream: TcpStream, store: Arc<BBStore>) -> Result<()> {
-    let mut writer = BufWriter::new(&stream);
-    let reader = BufReader::new(&stream);
+pub async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Result<()> {
+    let (read_half, write_half) = stream.split();
+    let mut writer = BufWriter::new(write_half);
+    let reader = BufReader::new(read_half);
 
-    for line in reader.lines() {
-        let line = line?;
+    let mut lines = reader.lines();
+    while let Some(line) = lines.next_line().await? {
         debug!("Received {}", line);
         let response: String = match ClientCommand::from_str(&line)? {
             ClientCommand::Get { key } => match store.get(key)? {
@@ -52,8 +50,8 @@ pub fn handle_connection(stream: TcpStream, store: Arc<BBStore>) -> Result<()> {
                 "ok\n".to_string()
             }
         };
-        writer.write_all(response.as_bytes())?;
-        writer.flush()?;
+        writer.write_all(response.as_bytes()).await?;
+        writer.flush().await?;
     }
 
     Ok(())

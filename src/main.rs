@@ -1,6 +1,7 @@
-use std::{net::TcpListener, sync::Arc, thread};
+use std::sync::Arc;
+use tokio::net::TcpListener;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use bbstore::{BBStore, handle_connection};
 use clap::Parser;
 use log::info;
@@ -23,24 +24,18 @@ struct Args {
     port: usize,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
-    let listener = TcpListener::bind(format!("{}:{}", args.address, args.port))?;
-    listener.set_nonblocking(true)?;
+    let listener = TcpListener::bind(format!("{}:{}", args.address, args.port)).await?;
     env_logger::init();
 
     let store = Arc::new(BBStore::new(args.num_shards));
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                info!("Received connection from {}", stream.local_addr()?.ip());
-                let store = store.clone();
-                thread::spawn(move || handle_connection(stream, store));
-            }
-            Err(e) => bail!(e),
-        }
+    loop {
+        let (stream, _) = listener.accept().await?;
+        info!("Received connection from {}", stream.local_addr()?.ip());
+        let store = store.clone();
+        tokio::spawn(async move { handle_connection(stream, store).await });
     }
-
-    Ok(())
 }
