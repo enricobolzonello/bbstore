@@ -1,5 +1,6 @@
 #![feature(oneshot_channel)]
 use anyhow::{Result, bail};
+use clap::Subcommand;
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::{str::FromStr, sync::Arc};
@@ -14,9 +15,12 @@ pub const DEFAULT_ADDRESS: &str = "127.0.0.1";
 pub const DEFAULT_PORT: usize = 8080;
 pub const DEFAULT_NUM_SHARDS: usize = 4;
 
-pub enum ClientCommand {
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    #[command(name = "GET")]
     Get { key: String },
-    Insert { key: String, value: String },
+    #[command(name = "SET")]
+    Set { key: String, value: String },
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -25,16 +29,16 @@ pub struct BBStoreConfig {
     pub num_shards: usize,
 }
 
-impl FromStr for ClientCommand {
+impl FromStr for Command {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let words: Vec<&str> = s.splitn(3, ' ').collect();
         match words.as_slice() {
-            ["GET", key] => Ok(ClientCommand::Get {
+            ["GET", key] => Ok(Command::Get {
                 key: key.to_string(),
             }),
-            ["SET", key, value] => Ok(ClientCommand::Insert {
+            ["SET", key, value] => Ok(Command::Set {
                 key: key.to_string(),
                 value: value.to_string(),
             }),
@@ -52,12 +56,12 @@ pub async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Re
     let mut lines = reader.lines();
     while let Some(line) = lines.next_line().await? {
         debug!("Received {}", line);
-        let response: String = match ClientCommand::from_str(&line)? {
-            ClientCommand::Get { key } => match store.get(key)? {
+        let response: String = match Command::from_str(&line)? {
+            Command::Get { key } => match store.get(key)? {
                 Some(value) => format!("{}\n", value),
                 None => "nil\n".to_string(),
             },
-            ClientCommand::Insert { key, value } => {
+            Command::Set { key, value } => {
                 store.insert(key, value)?;
                 "ok\n".to_string()
             }

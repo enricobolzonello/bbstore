@@ -1,23 +1,15 @@
 use anyhow::Result;
-use bbstore::{BBStoreConfig, DEFAULT_ADDRESS, DEFAULT_CONFIG_FILEPATH, DEFAULT_PORT};
-use clap::{Parser, Subcommand};
+use bbstore::{BBStoreConfig, Command, DEFAULT_ADDRESS, DEFAULT_CONFIG_FILEPATH, DEFAULT_PORT};
+use clap::Parser;
 use std::io::Read;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
-#[derive(Subcommand, Clone, Debug)]
-enum InputCommands {
-    #[command(name = "SET")]
-    Set { key: String, value: String },
-    #[command(name = "GET")]
-    Get { key: String },
-}
-
 #[derive(Parser)]
 struct Args {
     #[clap(subcommand)]
-    command: InputCommands,
+    command: Command,
 
     #[arg(long, short)]
     address: Option<String>,
@@ -53,8 +45,8 @@ async fn main() -> Result<()> {
 
     let mut writer = TcpStream::connect(&server_address).await?;
     let command = match &args.command {
-        InputCommands::Set { key, value } => format!("SET {} {}\n", key, value),
-        InputCommands::Get { key } => format!("GET {}\n", key),
+        Command::Set { key, value } => format!("SET {} {}\n", key, value),
+        Command::Get { key } => format!("GET {}\n", key),
     };
     writer.write_all(command.as_bytes()).await?;
 

@@ -3,7 +3,7 @@ use std::sync::oneshot;
 mod store;
 mod store_backend;
 
-pub(crate) enum Command {
+pub(crate) enum BackendCommand {
     Write {
         key: String,
         value: String,

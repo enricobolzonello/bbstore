@@ -1,6 +1,6 @@
 use crate::{
     BBStoreConfig,
-    backend::{Command, store_backend::BBStoreBackend},
+    backend::{BackendCommand, store_backend::BBStoreBackend},
 };
 use anyhow::{Result, anyhow};
 use log::debug;
@@ -12,7 +12,10 @@ use std::{
 
 const MAX_BATCH_SIZE: usize = 64;
 
-pub(crate) fn actor_loop(rx: mpsc::Receiver<Command>, shard: &mut BBStoreBackend<String, String>) {
+pub(crate) fn actor_loop(
+    rx: mpsc::Receiver<BackendCommand>,
+    shard: &mut BBStoreBackend<String, String>,
+) {
     loop {
         let first = match rx.recv() {
             Ok(cmd) => cmd,
@@ -33,11 +36,11 @@ pub(crate) fn actor_loop(rx: mpsc::Receiver<Command>, shard: &mut BBStoreBackend
 
         for cmd in batch {
             match cmd {
-                Command::Write { key, value, ack } => {
+                BackendCommand::Write { key, value, ack } => {
                     shard.insert(key, value);
                     let _ = ack.send(());
                 }
-                Command::Read { key, reply } => {
+                BackendCommand::Read { key, reply } => {
                     let value = shard.get(&key).cloned();
                     let _ = reply.send(value);
                 }
@@ -47,7 +50,7 @@ pub(crate) fn actor_loop(rx: mpsc::Receiver<Command>, shard: &mut BBStoreBackend
 }
 
 pub struct BBStore {
-    channels: Vec<mpsc::Sender<Command>>,
+    channels: Vec<mpsc::Sender<BackendCommand>>,
     config: BBStoreConfig,
 }
 
@@ -55,7 +58,7 @@ impl BBStore {
     pub fn new(config: BBStoreConfig) -> Self {
         let mut channels = Vec::new();
         for _ in 0..config.num_shards {
-            let (tx, rx) = mpsc::channel::<Command>();
+            let (tx, rx) = mpsc::channel::<BackendCommand>();
             thread::spawn(move || {
                 actor_loop(rx, &mut BBStoreBackend::default());
             });
@@ -72,7 +75,7 @@ impl BBStore {
         debug!("Inserting ({},{}) in shard {}", key, value, shard_key);
 
         let (ack_tx, ack_rx) = oneshot::channel();
-        tx.send(Command::Write {
+        tx.send(BackendCommand::Write {
             key,
             value,
             ack: ack_tx,
@@ -88,7 +91,7 @@ impl BBStore {
         let tx = self.channels[shard_key].clone();
 
         let (ack_tx, ack_rx) = oneshot::channel();
-        tx.send(Command::Read { key, reply: ack_tx })?;
+        tx.send(BackendCommand::Read { key, reply: ack_tx })?;
 
         ack_rx.recv().map_err(|e| anyhow!(e))
     }
