@@ -1,4 +1,4 @@
-use std::sync::oneshot;
+use tokio::sync::oneshot;
 
 mod store;
 mod store_backend;

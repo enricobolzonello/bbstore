@@ -1,10 +1,10 @@
-use std::{io::Read, sync::Arc};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 
 use anyhow::Result;
 use bbstore::{
-    BBStore, BBStoreConfig, DEFAULT_ADDRESS, DEFAULT_CONFIG_FILEPATH, DEFAULT_NUM_SHARDS,
-    DEFAULT_PORT, handle_connection,
+    BBStore, BBStoreConfig, DEFAULT_ADDRESS, DEFAULT_BUFFER_SIZE, DEFAULT_CONFIG_FILEPATH,
+    DEFAULT_NUM_SHARDS, DEFAULT_PORT, handle_connection,
 };
 use clap::Parser;
 use log::info;
@@ -17,6 +17,10 @@ struct Args {
     /// Number of threads (and shards)
     #[arg(long, short)]
     num_shards: Option<usize>,
+
+    /// Buffer size of each shard's channel
+    #[arg(long, short)]
+    buffer_size: Option<usize>,
 
     /// Address where the store will listen
     #[arg(long, short)]
@@ -31,9 +35,7 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let config = if let Ok(mut file) = std::fs::File::open(DEFAULT_CONFIG_FILEPATH) {
-        let mut buf = String::new();
-        file.read_to_string(&mut buf)?;
+    let config = if let Ok(buf) = tokio::fs::read_to_string(DEFAULT_CONFIG_FILEPATH).await {
         let file_config: BBStoreConfig = toml::from_str(&buf)?;
         BBStoreConfig {
             address: if args.address.is_some() || args.port.is_some() {
@@ -46,6 +48,7 @@ async fn main() -> Result<()> {
                 file_config.address
             },
             num_shards: args.num_shards.unwrap_or(file_config.num_shards),
+            buffer_size: args.buffer_size.unwrap_or(DEFAULT_BUFFER_SIZE),
         }
     } else {
         BBStoreConfig {
@@ -55,6 +58,7 @@ async fn main() -> Result<()> {
                 args.port.unwrap_or(DEFAULT_PORT)
             ),
             num_shards: args.num_shards.unwrap_or(DEFAULT_NUM_SHARDS),
+            buffer_size: args.buffer_size.unwrap_or(DEFAULT_BUFFER_SIZE),
         }
     };
 

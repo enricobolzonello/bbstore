@@ -7,6 +7,7 @@ fn bench_working_set_size(c: &mut Criterion) {
     let config = BBStoreConfig {
         num_shards: 4,
         address: "127.0.0.1".into(),
+        buffer_size: 10,
     };
 
     for size in [1_000, 10_000, 100_000, 1_000_000].iter() {
@@ -32,6 +33,7 @@ fn bench_batch_impact(c: &mut Criterion) {
     let config = BBStoreConfig {
         num_shards: 1,
         address: "127.0.0.1".into(),
+        buffer_size: 10,
     };
     let store = Arc::new(BBStore::new(config)); // Single shard to force high load
 

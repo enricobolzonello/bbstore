@@ -4,22 +4,20 @@ use crate::{
 };
 use anyhow::{Result, anyhow};
 use log::debug;
-use std::{
-    hash::{DefaultHasher, Hash, Hasher},
-    sync::{mpsc, oneshot},
-    thread,
-};
+use std::hash::{DefaultHasher, Hash, Hasher};
+
+use tokio::sync::{mpsc, oneshot};
 
 const MAX_BATCH_SIZE: usize = 64;
 
-pub(crate) fn actor_loop(
-    rx: mpsc::Receiver<BackendCommand>,
-    shard: &mut BBStoreBackend<String, String>,
+pub(crate) async fn actor_loop(
+    mut rx: mpsc::Receiver<BackendCommand>,
+    mut shard: BBStoreBackend<String, String>,
 ) {
     loop {
-        let first = match rx.recv() {
-            Ok(cmd) => cmd,
-            Err(_) => return,
+        let first = match rx.recv().await {
+            Some(cmd) => cmd,
+            None => return,
         };
 
         let mut batch = Vec::with_capacity(MAX_BATCH_SIZE);
@@ -58,17 +56,15 @@ impl BBStore {
     pub fn new(config: BBStoreConfig) -> Self {
         let mut channels = Vec::new();
         for _ in 0..config.num_shards {
-            let (tx, rx) = mpsc::channel::<BackendCommand>();
-            thread::spawn(move || {
-                actor_loop(rx, &mut BBStoreBackend::default());
-            });
+            let (tx, rx) = mpsc::channel::<BackendCommand>(config.buffer_size);
+            tokio::spawn(actor_loop(rx, BBStoreBackend::default()));
             channels.push(tx);
         }
 
         Self { channels, config }
     }
 
-    pub fn insert(&self, key: String, value: String) -> Result<()> {
+    pub async fn insert(&self, key: String, value: String) -> Result<()> {
         let shard_key = self.shard_index(&key);
         let tx = self.channels[shard_key].clone();
 
@@ -79,21 +75,22 @@ impl BBStore {
             key,
             value,
             ack: ack_tx,
-        })?;
+        })
+        .await?;
 
-        ack_rx.recv()?;
+        ack_rx.await?;
 
         Ok(())
     }
 
-    pub fn get(&self, key: String) -> Result<Option<String>> {
+    pub async fn get(&self, key: String) -> Result<Option<String>> {
         let shard_key = self.shard_index(&key);
         let tx = self.channels[shard_key].clone();
 
         let (ack_tx, ack_rx) = oneshot::channel();
-        tx.send(BackendCommand::Read { key, reply: ack_tx })?;
+        tx.send(BackendCommand::Read { key, reply: ack_tx }).await?;
 
-        ack_rx.recv().map_err(|e| anyhow!(e))
+        ack_rx.await.map_err(|e| anyhow!(e))
     }
 
     pub fn config(&self) -> BBStoreConfig {

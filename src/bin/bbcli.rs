@@ -1,7 +1,7 @@
 use anyhow::Result;
 use bbstore::{BBStoreConfig, Command, DEFAULT_ADDRESS, DEFAULT_CONFIG_FILEPATH, DEFAULT_PORT};
 use clap::Parser;
-use std::io::Read;
+
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
@@ -18,13 +18,11 @@ struct Args {
     port: Option<usize>,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let server_address = if let Ok(mut file) = std::fs::File::open(DEFAULT_CONFIG_FILEPATH) {
-        let mut buf = String::new();
-        file.read_to_string(&mut buf)?;
+    let server_address = if let Ok(buf) = tokio::fs::read_to_string(DEFAULT_CONFIG_FILEPATH).await {
         let file_config: BBStoreConfig = toml::from_str(&buf)?;
         if args.address.is_some() || args.port.is_some() {
             format!(

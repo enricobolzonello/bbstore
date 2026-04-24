@@ -1,11 +1,9 @@
-#![feature(oneshot_channel)]
 use anyhow::Result;
 use log::debug;
 use serde::{Deserialize, Serialize};
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio::fs::OpenOptions;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::TcpStream;
 
@@ -18,11 +16,13 @@ pub const DEFAULT_CONFIG_FILEPATH: &str = "/usr/local/etc/bbstore/bbstore.conf";
 pub const DEFAULT_ADDRESS: &str = "127.0.0.1";
 pub const DEFAULT_PORT: usize = 8080;
 pub const DEFAULT_NUM_SHARDS: usize = 4;
+pub const DEFAULT_BUFFER_SIZE: usize = 10;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct BBStoreConfig {
     pub address: String,
     pub num_shards: usize,
+    pub buffer_size: usize,
 }
 
 pub async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Result<()> {
@@ -34,12 +34,12 @@ pub async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Re
     while let Some(line) = lines.next_line().await? {
         debug!("Received {}", line);
         let response: String = match Command::from_str(&line)? {
-            Command::Get { key } => match store.get(key)? {
+            Command::Get { key } => match store.get(key).await? {
                 Some(value) => format!("{}\n", value),
                 None => "nil\n".to_string(),
             },
             Command::Set { key, value } => {
-                store.insert(key, value)?;
+                store.insert(key, value).await?;
                 "ok\n".to_string()
             }
             Command::Config(_subcommand) => {
@@ -48,8 +48,10 @@ pub async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Re
                 let mut file = OpenOptions::new()
                     .write(true)
                     .create(true)
-                    .open(DEFAULT_CONFIG_FILEPATH)?;
-                file.write(toml::to_string_pretty(&store.config())?.as_bytes())?;
+                    .open(DEFAULT_CONFIG_FILEPATH)
+                    .await?;
+                file.write(toml::to_string_pretty(&store.config())?.as_bytes())
+                    .await?;
                 "ok\n".to_string()
             }
         };
