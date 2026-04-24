@@ -96,6 +96,10 @@ impl BBStore {
         ack_rx.recv().map_err(|e| anyhow!(e))
     }
 
+    pub fn config(&self) -> BBStoreConfig {
+        self.config.clone()
+    }
+
     fn shard_index(&self, key: &str) -> usize {
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);

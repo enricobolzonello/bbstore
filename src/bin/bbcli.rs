@@ -44,11 +44,9 @@ async fn main() -> Result<()> {
     };
 
     let mut writer = TcpStream::connect(&server_address).await?;
-    let command = match &args.command {
-        Command::Set { key, value } => format!("SET {} {}\n", key, value),
-        Command::Get { key } => format!("GET {}\n", key),
-    };
-    writer.write_all(command.as_bytes()).await?;
+    writer
+        .write_all(format!("{}\n", args.command).as_bytes())
+        .await?;
 
     let mut response = String::new();
     BufReader::new(writer).read_line(&mut response).await?;
