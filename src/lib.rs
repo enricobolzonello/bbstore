@@ -1,6 +1,7 @@
 #![feature(oneshot_channel)]
 use anyhow::{Result, bail};
 use log::debug;
+use serde::{Deserialize, Serialize};
 use std::{str::FromStr, sync::Arc};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::TcpStream;
@@ -11,6 +12,12 @@ pub use crate::backend::BBStore;
 pub enum ClientCommand {
     Get { key: String },
     Insert { key: String, value: String },
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct BBStoreConfig {
+    pub address: String,
+    pub num_shards: usize,
 }
 
 impl FromStr for ClientCommand {

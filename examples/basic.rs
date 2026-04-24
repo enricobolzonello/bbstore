@@ -1,9 +1,13 @@
 use anyhow::Result;
-use bbstore::BBStore;
+use bbstore::{BBStore, BBStoreConfig};
 use std::sync::Arc;
 
 fn main() -> Result<()> {
-    let store = Arc::new(BBStore::new(1));
+    let config = BBStoreConfig {
+        address: "127.0.0.1:8080".into(),
+        num_shards: 1,
+    };
+    let store = Arc::new(BBStore::new(config));
     store.insert("key-1".into(), "value-1".into())?;
     store.insert("key-2".into(), "value-2".into())?;
     store.insert("key-3".into(), "value-3".into())?;

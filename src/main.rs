@@ -1,10 +1,15 @@
-use std::sync::Arc;
+use std::{io::Read, sync::Arc};
 use tokio::net::TcpListener;
 
 use anyhow::Result;
-use bbstore::{BBStore, handle_connection};
+use bbstore::{BBStore, BBStoreConfig, handle_connection};
 use clap::Parser;
 use log::info;
+
+const DEFAULT_CONFIG_FILEPATH: &str = "/etc/bbstore/bbstore.conf";
+const DEFAULT_ADDRESS: &str = "127.0.0.1";
+const DEFAULT_PORT: usize = 8080;
+const DEFAULT_NUM_SHARDS: usize = 4;
 
 /// BB(BasicBolzo)-Store
 /// Simple key-value store to practice single writer principles
@@ -13,24 +18,51 @@ use log::info;
 struct Args {
     /// Number of threads (and shards)
     #[arg(long, short)]
-    num_shards: usize,
+    num_shards: Option<usize>,
 
     /// Address where the store will listen
-    #[arg(long, short, default_value = "127.0.0.1")]
-    address: String,
+    #[arg(long, short)]
+    address: Option<String>,
 
     /// Port where the store will listen
-    #[arg(long, short, default_value_t = 8080)]
-    port: usize,
+    #[arg(long, short)]
+    port: Option<usize>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let listener = TcpListener::bind(format!("{}:{}", args.address, args.port)).await?;
-    env_logger::init();
 
-    let store = Arc::new(BBStore::new(args.num_shards));
+    let config = if let Ok(mut file) = std::fs::File::open(DEFAULT_CONFIG_FILEPATH) {
+        let mut buf = String::new();
+        file.read_to_string(&mut buf)?;
+        let file_config: BBStoreConfig = toml::from_str(&buf)?;
+        BBStoreConfig {
+            address: if args.address.is_some() || args.port.is_some() {
+                format!(
+                    "{}:{}",
+                    args.address.as_deref().unwrap_or(DEFAULT_ADDRESS),
+                    args.port.unwrap_or(DEFAULT_PORT)
+                )
+            } else {
+                file_config.address
+            },
+            num_shards: args.num_shards.unwrap_or(file_config.num_shards),
+        }
+    } else {
+        BBStoreConfig {
+            address: format!(
+                "{}:{}",
+                args.address.as_deref().unwrap_or(DEFAULT_ADDRESS),
+                args.port.unwrap_or(DEFAULT_PORT)
+            ),
+            num_shards: args.num_shards.unwrap_or(DEFAULT_NUM_SHARDS),
+        }
+    };
+
+    env_logger::init();
+    let listener = TcpListener::bind(&config.address).await?;
+    let store = Arc::new(BBStore::new(config));
 
     loop {
         let (stream, _) = listener.accept().await?;

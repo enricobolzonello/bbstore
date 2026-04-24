@@ -1,4 +1,7 @@
-use crate::backend::{Command, store_backend::BBStoreBackend};
+use crate::{
+    BBStoreConfig,
+    backend::{Command, store_backend::BBStoreBackend},
+};
 use anyhow::{Result, anyhow};
 use log::debug;
 use std::{
@@ -45,13 +48,13 @@ pub(crate) fn actor_loop(rx: mpsc::Receiver<Command>, shard: &mut BBStoreBackend
 
 pub struct BBStore {
     channels: Vec<mpsc::Sender<Command>>,
-    num_shards: usize,
+    config: BBStoreConfig,
 }
 
 impl BBStore {
-    pub fn new(num_shards: usize) -> Self {
+    pub fn new(config: BBStoreConfig) -> Self {
         let mut channels = Vec::new();
-        for _ in 0..num_shards {
+        for _ in 0..config.num_shards {
             let (tx, rx) = mpsc::channel::<Command>();
             thread::spawn(move || {
                 actor_loop(rx, &mut BBStoreBackend::default());
@@ -59,10 +62,7 @@ impl BBStore {
             channels.push(tx);
         }
 
-        Self {
-            channels,
-            num_shards,
-        }
+        Self { channels, config }
     }
 
     pub fn insert(&self, key: String, value: String) -> Result<()> {
@@ -96,6 +96,6 @@ impl BBStore {
     fn shard_index(&self, key: &str) -> usize {
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
-        hasher.finish() as usize % self.num_shards
+        hasher.finish() as usize % self.config.num_shards
     }
 }

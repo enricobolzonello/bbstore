@@ -1,13 +1,16 @@
-use bbstore::BBStore;
+use bbstore::{BBStore, BBStoreConfig};
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use std::sync::Arc;
 
 fn bench_working_set_size(c: &mut Criterion) {
     let mut group = c.benchmark_group("WorkingSetSize");
+    let config = BBStoreConfig {
+        num_shards: 4,
+        address: "127.0.0.1".into(),
+    };
 
     for size in [1_000, 10_000, 100_000, 1_000_000].iter() {
-        let num_shards = 4;
-        let store = Arc::new(BBStore::new(num_shards));
+        let store = Arc::new(BBStore::new(config.clone()));
 
         for i in 0..*size {
             let _ = store.insert(format!("key-{}", i), "value".to_string());
@@ -26,7 +29,11 @@ fn bench_working_set_size(c: &mut Criterion) {
 
 fn bench_batch_impact(c: &mut Criterion) {
     let mut group = c.benchmark_group("BatchingImpact");
-    let store = Arc::new(BBStore::new(1)); // Single shard to force high load
+    let config = BBStoreConfig {
+        num_shards: 1,
+        address: "127.0.0.1".into(),
+    };
+    let store = Arc::new(BBStore::new(config)); // Single shard to force high load
 
     // We flood the actor to ensure the batching logic (try_recv) triggers
     group.bench_function("flood_sequential", |b| {
