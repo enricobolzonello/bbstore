@@ -37,3 +37,7 @@ Look at the GitHub [issue tracker][issues] to contribute directly, this serves a
 - [ ] more benchmarks
 - [ ] propagate errors to the user
 - [ ] distributed storage
+
+## Contributing
+
+See the [contributing guide](CONTRIBUTING.md).
