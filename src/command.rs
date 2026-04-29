@@ -49,19 +49,24 @@ impl FromStr for Command {
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let words: Vec<&str> = s.splitn(3, ' ').collect();
         match words.as_slice() {
-            ["GET", key] => Ok(Command::Get {
+            [] | [""] => bail!("Empty command"),
+            ["GET", key] if !key.is_empty() => Ok(Command::Get {
                 key: key.to_string(),
             }),
-            ["SET", key, value] => Ok(Command::Set {
+            ["GET"] | ["GET", ""] => bail!("GET requires a key"),
+            ["GET", ..] => bail!("GET takes exactly one argument"),
+            ["SET", key, value] if !key.is_empty() => Ok(Command::Set {
                 key: key.to_string(),
                 value: value.to_string(),
             }),
+            ["SET"] | ["SET", ""] => bail!("SET requires a key and value"),
+            ["SET", _] => bail!("SET requires a value"),
             ["CONFIG", "REWRITE"] => Ok(Command::Config(ConfigArgs {
                 command: ConfigCommand::Rewrite,
             })),
-            ["CONFIG", cmd, ..] => bail!("Unknown CONFIG subcommand {}", cmd),
-            [cmd, ..] => bail!("Unknown command {}", cmd),
-            [] => bail!("Empty command"),
+            ["CONFIG"] | ["CONFIG", ""] => bail!("CONFIG requires a subcommand"),
+            ["CONFIG", sub, ..] => bail!("Unknown CONFIG subcommand: {}", sub),
+            [cmd, ..] => bail!("Unknown command: {}", cmd),
         }
     }
 }
