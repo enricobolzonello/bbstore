@@ -155,4 +155,28 @@ mod tests {
         let err = "CONFIG".parse::<Command>().unwrap_err();
         assert!(err.to_string().contains("requires a subcommand"));
     }
+
+    #[test]
+    fn display_roundtrip_get() {
+        let original = "GET mykey";
+        assert_eq!(original.parse::<Command>().unwrap().to_string(), original);
+    }
+
+    #[test]
+    fn display_roundtrip_set() {
+        let original = "SET mykey myvalue";
+        assert_eq!(original.parse::<Command>().unwrap().to_string(), original);
+    }
+
+    #[test]
+    fn display_roundtrip_set_value_with_spaces() {
+        let original = "SET mykey hello world";
+        assert_eq!(original.parse::<Command>().unwrap().to_string(), original);
+    }
+
+    #[test]
+    fn display_roundtrip_config_rewrite() {
+        let original = "CONFIG REWRITE";
+        assert_eq!(original.parse::<Command>().unwrap().to_string(), original);
+    }
 }
