@@ -37,28 +37,5 @@ fn bench_working_set_size(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_batch_impact(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let mut group = c.benchmark_group("BatchingImpact");
-    let config = BBStoreConfig {
-        num_shards: 1,
-        address: "127.0.0.1".into(),
-        buffer_size: 10,
-    };
-    let store = {
-        let _guard = rt.enter();
-        Arc::new(BBStore::new(config))
-    };
-
-    group.bench_function("flood_sequential", |b| {
-        b.to_async(&rt).iter(|| async {
-            for i in 0..64 {
-                let _ = black_box(store.get(format!("key-{}", i)).await);
-            }
-        });
-    });
-    group.finish();
-}
-
-criterion_group!(benches, bench_working_set_size, bench_batch_impact);
+criterion_group!(benches, bench_working_set_size);
 criterion_main!(benches);

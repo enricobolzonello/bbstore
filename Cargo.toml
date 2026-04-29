@@ -20,5 +20,9 @@ criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
 rand = { version = "0.8", features = ["small_rng"] }
 
 [[bench]]
-name = "cache_misses"
+name = "latency"
+harness = false
+
+[[bench]]
+name = "throughput"
 harness = false
