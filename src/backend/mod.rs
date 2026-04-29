@@ -15,4 +15,4 @@ pub(crate) enum BackendCommand {
     },
 }
 
-pub use store::BBStore;
+pub(crate) use store::BBStore;

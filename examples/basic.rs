@@ -1,6 +1,6 @@
 use anyhow::Result;
-use bbstore::{BBStore, BBStoreConfig};
-use std::sync::Arc;
+use bbstore::{BBStoreConfig, Client};
+use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -9,26 +9,19 @@ async fn main() -> Result<()> {
         num_shards: 1,
         buffer_size: 10,
     };
-    let store = Arc::new(BBStore::new(config));
+
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(bbstore::run(listener, config));
+
+    let mut client = Client::connect(addr).await?;
 
     for i in 1..=8 {
-        store
-            .insert(format!("key-{}", i), format!("value-{}", i))
-            .await?;
+        client.set(&format!("key-{}", i), &format!("value-{}", i)).await?;
     }
 
-    let handles: Vec<_> = (1..=8)
-        .map(|i| {
-            let s = Arc::clone(&store);
-            tokio::spawn(async move {
-                let key = format!("key-{}", i);
-                println!("{:?}", s.get(key).await);
-            })
-        })
-        .collect();
-
-    for h in handles {
-        h.await?;
+    for i in 1..=8 {
+        println!("{:?}", client.get(&format!("key-{}", i)).await?);
     }
 
     Ok(())

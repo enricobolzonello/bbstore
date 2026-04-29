@@ -1,13 +1,7 @@
-use std::sync::Arc;
-use tokio::net::TcpListener;
-
 use anyhow::Result;
-use bbstore::{
-    BBStore, BBStoreConfig, DEFAULT_ADDRESS, DEFAULT_BUFFER_SIZE, DEFAULT_CONFIG_FILEPATH,
-    DEFAULT_NUM_SHARDS, DEFAULT_PORT, handle_connection,
-};
+use bbstore::{BBStoreConfig, DEFAULT_ADDRESS, DEFAULT_BUFFER_SIZE, DEFAULT_CONFIG_FILEPATH, DEFAULT_NUM_SHARDS, DEFAULT_PORT};
 use clap::Parser;
-use log::info;
+use tokio::net::TcpListener;
 
 /// BB(BasicBolzo)-Store
 /// Simple key-value store to practice single writer principles
@@ -64,12 +58,5 @@ async fn main() -> Result<()> {
 
     env_logger::init();
     let listener = TcpListener::bind(&config.address).await?;
-    let store = Arc::new(BBStore::new(config));
-
-    loop {
-        let (stream, _) = listener.accept().await?;
-        info!("Received connection from {}", stream.local_addr()?.ip());
-        let store = store.clone();
-        tokio::spawn(async move { handle_connection(stream, store).await });
-    }
+    bbstore::run(listener, config).await
 }

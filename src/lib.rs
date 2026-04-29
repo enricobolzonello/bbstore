@@ -5,12 +5,15 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 
 mod backend;
+mod client;
 mod command;
-pub use crate::backend::BBStore;
+pub use crate::client::Client;
 pub use crate::command::Command;
+
+use crate::backend::BBStore;
 
 pub const DEFAULT_CONFIG_FILEPATH: &str = "/usr/local/etc/bbstore/bbstore.conf";
 pub const DEFAULT_ADDRESS: &str = "127.0.0.1";
@@ -52,7 +55,17 @@ async fn process_command(cmd: Command, store: &Arc<BBStore>) -> Result<String> {
     Ok(rtn)
 }
 
-pub async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Result<()> {
+pub async fn run(listener: TcpListener, config: BBStoreConfig) -> Result<()> {
+    let store = Arc::new(BBStore::new(config));
+    loop {
+        let (stream, addr) = listener.accept().await?;
+        debug!("Received connection from {}", addr.ip());
+        let store = store.clone();
+        tokio::spawn(handle_connection(stream, store));
+    }
+}
+
+async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Result<()> {
     let (read_half, write_half) = stream.split();
     let mut writer = BufWriter::new(write_half);
     let reader = BufReader::new(read_half);
