@@ -70,3 +70,89 @@ impl FromStr for Command {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_str_get() {
+        let cmd: Command = "GET mykey".parse().unwrap();
+        assert!(matches!(cmd, Command::Get { key } if key == "mykey"));
+    }
+
+    #[test]
+    fn from_str_set() {
+        let cmd: Command = "SET mykey myvalue".parse().unwrap();
+        assert!(matches!(cmd, Command::Set { key, value } if key == "mykey" && value == "myvalue"));
+    }
+
+    #[test]
+    fn from_str_set_value_with_spaces() {
+        let cmd: Command = "SET mykey hello world".parse().unwrap();
+        assert!(
+            matches!(cmd, Command::Set { key, value } if key == "mykey" && value == "hello world")
+        );
+    }
+
+    #[test]
+    fn from_str_config_rewrite() {
+        let cmd: Command = "CONFIG REWRITE".parse().unwrap();
+        assert!(matches!(cmd, Command::Config(_)));
+    }
+
+    #[test]
+    fn from_str_unknown_command() {
+        assert!("DELETE mykey".parse::<Command>().is_err());
+    }
+
+    #[test]
+    fn from_str_unknown_config_subcommand() {
+        assert!("CONFIG GET maxmemory".parse::<Command>().is_err());
+    }
+
+    #[test]
+    fn from_str_empty_input() {
+        assert!("".parse::<Command>().is_err());
+    }
+
+    #[test]
+    fn from_str_get_missing_key() {
+        assert!("GET".parse::<Command>().is_err());
+    }
+
+    #[test]
+    fn from_str_set_missing_value() {
+        assert!("SET mykey".parse::<Command>().is_err());
+    }
+
+    #[test]
+    fn from_str_get_empty_key() {
+        let err = "GET ".parse::<Command>().unwrap_err();
+        assert!(err.to_string().contains("requires a key"));
+    }
+
+    #[test]
+    fn from_str_get_extra_argument() {
+        let err = "GET mykey extra".parse::<Command>().unwrap_err();
+        assert!(err.to_string().contains("exactly one argument"));
+    }
+
+    #[test]
+    fn from_str_set_no_args() {
+        let err = "SET".parse::<Command>().unwrap_err();
+        assert!(err.to_string().contains("requires a key and value"));
+    }
+
+    #[test]
+    fn from_str_set_empty_key() {
+        let err = "SET ".parse::<Command>().unwrap_err();
+        assert!(err.to_string().contains("requires a key and value"));
+    }
+
+    #[test]
+    fn from_str_config_no_subcommand() {
+        let err = "CONFIG".parse::<Command>().unwrap_err();
+        assert!(err.to_string().contains("requires a subcommand"));
+    }
+}
