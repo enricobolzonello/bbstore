@@ -12,7 +12,9 @@ mod client;
 mod command;
 pub use crate::client::Client;
 pub use crate::command::Command;
-
+#[cfg(feature = "benchmarking")]
+pub use crate::backend::BBStore;
+#[cfg(not(feature = "benchmarking"))]
 use crate::backend::BBStore;
 
 pub const DEFAULT_CONFIG_FILEPATH: &str = "/usr/local/etc/bbstore/bbstore.conf";

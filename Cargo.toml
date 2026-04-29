@@ -3,6 +3,9 @@ name = "bbstore"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+benchmarking = []
+
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.6.0", features = ["derive"] }

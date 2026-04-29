@@ -47,7 +47,7 @@ pub(crate) async fn actor_loop(
     }
 }
 
-pub(crate) struct BBStore {
+pub struct BBStore {
     channels: Vec<mpsc::Sender<BackendCommand>>,
     config: BBStoreConfig,
 }

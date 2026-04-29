@@ -15,4 +15,7 @@ pub(crate) enum BackendCommand {
     },
 }
 
+#[cfg(feature = "benchmarking")]
+pub use store::BBStore;
+#[cfg(not(feature = "benchmarking"))]
 pub(crate) use store::BBStore;
