@@ -10,12 +10,13 @@ use tokio::net::{TcpListener, TcpStream};
 mod backend;
 mod client;
 mod command;
-pub use crate::client::Client;
-pub use crate::command::Command;
+mod errors;
 #[cfg(feature = "benchmarking")]
 pub use crate::backend::BBStore;
 #[cfg(not(feature = "benchmarking"))]
 use crate::backend::BBStore;
+pub use crate::client::Client;
+pub use crate::command::Command;
 
 pub const DEFAULT_CONFIG_FILEPATH: &str = "/usr/local/etc/bbstore/bbstore.conf";
 pub const DEFAULT_ADDRESS: &str = "127.0.0.1";
@@ -75,9 +76,12 @@ async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Result
     let mut lines = reader.lines();
     while let Some(line) = lines.next_line().await? {
         debug!("Received {}", line);
-        let response: String = match process_command(Command::from_str(&line)?, &store).await {
-            Ok(r) => r,
-            Err(e) => format!("ERR {}\n", e), // TODO: probably i should split between non-recoverable errors and user errors
+        let response = match Command::from_str(&line) {
+            Ok(command) => match process_command(command, &store).await {
+                Ok(r) => r,
+                Err(_) => format!("Internal Error"),
+            },
+            Err(e) => format!("ERR: {}\n", e),
         };
         writer.write_all(response.as_bytes()).await?;
         writer.flush().await?;

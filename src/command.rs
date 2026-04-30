@@ -1,4 +1,4 @@
-use anyhow::bail;
+use crate::errors::ProtocolError;
 use clap::{Args, Subcommand};
 use std::{fmt, str::FromStr};
 
@@ -44,29 +44,58 @@ impl fmt::Display for Command {
 }
 
 impl FromStr for Command {
-    type Err = anyhow::Error;
+    type Err = ProtocolError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let words: Vec<&str> = s.splitn(3, ' ').collect();
         match words.as_slice() {
-            [] | [""] => bail!("Empty command"),
-            ["GET", key] if !key.is_empty() => Ok(Command::Get {
-                key: key.to_string(),
-            }),
-            ["GET"] | ["GET", ""] => bail!("GET requires a key"),
-            ["GET", ..] => bail!("GET takes exactly one argument"),
-            ["SET", key, value] if !key.is_empty() => Ok(Command::Set {
-                key: key.to_string(),
-                value: value.to_string(),
-            }),
-            ["SET"] | ["SET", ""] => bail!("SET requires a key and value"),
-            ["SET", _] => bail!("SET requires a value"),
-            ["CONFIG", "REWRITE"] => Ok(Command::Config(ConfigArgs {
-                command: ConfigCommand::Rewrite,
-            })),
-            ["CONFIG"] | ["CONFIG", ""] => bail!("CONFIG requires a subcommand"),
-            ["CONFIG", sub, ..] => bail!("Unknown CONFIG subcommand: {}", sub),
-            [cmd, ..] => bail!("Unknown command: {}", cmd),
+            [] | [""] => Err(ProtocolError::EmptyCommand),
+            [cmd, args @ ..] => match *cmd {
+                "GET" => match args {
+                    [key] if !key.is_empty() => Ok(Command::Get {
+                        key: key.to_string(),
+                    }),
+                    [_] => Err(ProtocolError::RequiredArguments {
+                        command: "GET".into(),
+                        arguments: "key".into(),
+                    }),
+                    _ => Err(ProtocolError::InvalidNumberOfArguments {
+                        command: "GET".into(),
+                        expected: 1,
+                        received: args.len(),
+                    }),
+                },
+                "SET" => match args {
+                    [key, value] if !key.is_empty() && !value.is_empty() => Ok(Command::Set {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                    }),
+                    [_, _] => Err(ProtocolError::RequiredArguments {
+                        command: "SET".into(),
+                        arguments: "key and value".into(),
+                    }),
+                    _ => Err(ProtocolError::InvalidNumberOfArguments {
+                        command: "SET".into(),
+                        expected: 2,
+                        received: args.len(),
+                    }),
+                },
+                "CONFIG" => match args {
+                    ["REWRITE"] => Ok(Command::Config(ConfigArgs {
+                        command: ConfigCommand::Rewrite,
+                    })),
+                    [sub] => Err(ProtocolError::UnknownSubcommand {
+                        command: "CONFIG".into(),
+                        subcommand: sub.to_string(),
+                    }),
+                    _ => Err(ProtocolError::InvalidNumberOfArguments {
+                        command: "CONFIG".into(),
+                        expected: 2, // TODO: for now it is 2, not scalable
+                        received: args.len(),
+                    }),
+                },
+                cmd => Err(ProtocolError::UnknownCommand(cmd.to_string())),
+            },
         }
     }
 }
