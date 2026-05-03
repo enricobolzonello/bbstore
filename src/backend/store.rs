@@ -1,5 +1,5 @@
 use crate::{
-    BBStoreConfig,
+    BBStoreConfig, ByteStr, ByteString,
     backend::{BackendCommand, store_backend::BBStoreBackend},
 };
 use anyhow::{Result, anyhow};
@@ -12,7 +12,7 @@ const MAX_BATCH_SIZE: usize = 64;
 
 pub(crate) async fn actor_loop(
     mut rx: mpsc::Receiver<BackendCommand>,
-    mut shard: BBStoreBackend<String, String>,
+    mut shard: BBStoreBackend<ByteString, ByteString>,
 ) {
     loop {
         let first = match rx.recv().await {
@@ -64,7 +64,7 @@ impl BBStore {
         Self { channels, config }
     }
 
-    pub async fn insert(&self, key: String, value: String) -> Result<()> {
+    pub async fn insert(&self, key: ByteString, value: ByteString) -> Result<()> {
         let shard_key = self.shard_index(&key);
         let tx = self.channels[shard_key].clone();
 
@@ -83,7 +83,7 @@ impl BBStore {
         Ok(())
     }
 
-    pub async fn get(&self, key: String) -> Result<Option<String>> {
+    pub async fn get(&self, key: ByteString) -> Result<Option<ByteString>> {
         let shard_key = self.shard_index(&key);
         let tx = self.channels[shard_key].clone();
 
@@ -97,7 +97,7 @@ impl BBStore {
         self.config.clone()
     }
 
-    fn shard_index(&self, key: &str) -> usize {
+    fn shard_index(&self, key: &ByteStr) -> usize {
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
         hasher.finish() as usize % self.config.num_shards
@@ -120,58 +120,31 @@ mod tests {
     #[tokio::test]
     async fn bbstore_get_missing_key_returns_none() {
         let store = BBStore::new(config());
-        assert!(store.get("missing".to_string()).await.unwrap().is_none());
+        assert!(store.get("missing".into()).await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn bbstore_insert_then_get_returns_value() {
         let store = BBStore::new(config());
-        store
-            .insert("k".to_string(), "v".to_string())
-            .await
-            .unwrap();
-        assert_eq!(
-            store.get("k".to_string()).await.unwrap(),
-            Some("v".to_string())
-        );
+        store.insert("k".into(), "v".into()).await.unwrap();
+        assert_eq!(store.get("k".into()).await.unwrap(), Some("v".into()));
     }
 
     #[tokio::test]
     async fn bbstore_insert_overwrites_existing_key() {
         let store = BBStore::new(config());
-        store
-            .insert("k".to_string(), "v1".to_string())
-            .await
-            .unwrap();
-        store
-            .insert("k".to_string(), "v2".to_string())
-            .await
-            .unwrap();
-        assert_eq!(
-            store.get("k".to_string()).await.unwrap(),
-            Some("v2".to_string())
-        );
+        store.insert("k".into(), "v1".into()).await.unwrap();
+        store.insert("k".into(), "v2".into()).await.unwrap();
+        assert_eq!(store.get("k".into()).await.unwrap(), Some("v2".into()));
     }
 
     #[tokio::test]
     async fn bbstore_distinct_keys_do_not_collide() {
         let store = BBStore::new(config());
-        store
-            .insert("a".to_string(), "1".to_string())
-            .await
-            .unwrap();
-        store
-            .insert("b".to_string(), "2".to_string())
-            .await
-            .unwrap();
-        assert_eq!(
-            store.get("a".to_string()).await.unwrap(),
-            Some("1".to_string())
-        );
-        assert_eq!(
-            store.get("b".to_string()).await.unwrap(),
-            Some("2".to_string())
-        );
+        store.insert("a".into(), "1".into()).await.unwrap();
+        store.insert("b".into(), "2".into()).await.unwrap();
+        assert_eq!(store.get("a".into()).await.unwrap(), Some("1".into()));
+        assert_eq!(store.get("b".into()).await.unwrap(), Some("2".into()));
     }
 
     #[tokio::test]
@@ -182,14 +155,14 @@ mod tests {
         });
         for i in 0..20 {
             store
-                .insert(format!("key-{}", i), format!("val-{}", i))
+                .insert(format!("key-{}", i).into(), format!("val-{}", i).into())
                 .await
                 .unwrap();
         }
         for i in 0..20 {
             assert_eq!(
-                store.get(format!("key-{}", i)).await.unwrap(),
-                Some(format!("val-{}", i))
+                store.get(format!("key-{}", i).into()).await.unwrap(),
+                Some(format!("val-{}", i).into())
             );
         }
     }

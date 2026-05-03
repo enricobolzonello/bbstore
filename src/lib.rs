@@ -7,10 +7,13 @@ use tokio::fs::OpenOptions;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::types::{ByteStr, ByteString};
+
 mod backend;
 mod client;
 mod command;
 mod errors;
+mod types;
 #[cfg(feature = "benchmarking")]
 pub use crate::backend::BBStore;
 #[cfg(not(feature = "benchmarking"))]
@@ -31,15 +34,15 @@ pub struct BBStoreConfig {
     pub buffer_size: usize,
 }
 
-async fn process_command(cmd: Command, store: &Arc<BBStore>) -> Result<String> {
+async fn process_command(cmd: Command, store: &Arc<BBStore>) -> Result<ByteString> {
     let rtn = match cmd {
-        Command::Get { key } => match store.get(key).await? {
-            Some(value) => format!("{}\n", value),
-            None => "nil\n".to_string(),
+        Command::Get { key } => match store.get(key.into()).await? {
+            Some(value) => value,
+            None => "nil".into(),
         },
         Command::Set { key, value } => {
-            store.insert(key, value).await?;
-            "ok\n".to_string()
+            store.insert(key.into(), value.into()).await?;
+            "ok".into()
         }
         Command::Config(_subcommand) => {
             // for now i can assume that the command
@@ -51,7 +54,7 @@ async fn process_command(cmd: Command, store: &Arc<BBStore>) -> Result<String> {
                 .await?;
             file.write(toml::to_string_pretty(&store.config())?.as_bytes())
                 .await?;
-            "ok\n".to_string()
+            "ok".into()
         }
     };
 
@@ -79,11 +82,12 @@ async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Result
         let response = match Command::from_str(&line) {
             Ok(command) => match process_command(command, &store).await {
                 Ok(r) => r,
-                Err(_) => format!("Internal Error"),
+                Err(_) => "Internal Error".into(),
             },
-            Err(e) => format!("ERR: {}\n", e),
+            Err(e) => format!("ERR: {}", e).into(),
         };
         writer.write_all(response.as_bytes()).await?;
+        writer.write_all(b"\r\n").await?;
         writer.flush().await?;
     }
 
