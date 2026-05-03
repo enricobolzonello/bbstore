@@ -88,9 +88,13 @@ impl FromStr for Command {
                         command: "CONFIG".into(),
                         subcommand: sub.to_string(),
                     }),
+                    [] => Err(ProtocolError::RequiredArguments {
+                        command: "CONFIG".into(),
+                        arguments: "subcommand".into(),
+                    }),
                     _ => Err(ProtocolError::InvalidNumberOfArguments {
                         command: "CONFIG".into(),
-                        expected: 2, // TODO: for now it is 2, not scalable
+                        expected: 1,
                         received: args.len(),
                     }),
                 },
@@ -158,31 +162,31 @@ mod tests {
     #[test]
     fn from_str_get_empty_key() {
         let err = "GET ".parse::<Command>().unwrap_err();
-        assert!(err.to_string().contains("requires a key"));
+        assert!(matches!(err, ProtocolError::RequiredArguments { ref command, .. } if command == "GET"));
     }
 
     #[test]
     fn from_str_get_extra_argument() {
         let err = "GET mykey extra".parse::<Command>().unwrap_err();
-        assert!(err.to_string().contains("exactly one argument"));
+        assert!(matches!(err, ProtocolError::InvalidNumberOfArguments { expected: 1, .. }));
     }
 
     #[test]
     fn from_str_set_no_args() {
         let err = "SET".parse::<Command>().unwrap_err();
-        assert!(err.to_string().contains("requires a key and value"));
+        assert!(matches!(err, ProtocolError::InvalidNumberOfArguments { ref command, .. } if command == "SET"));
     }
 
     #[test]
     fn from_str_set_empty_key() {
         let err = "SET ".parse::<Command>().unwrap_err();
-        assert!(err.to_string().contains("requires a key and value"));
+        assert!(matches!(err, ProtocolError::InvalidNumberOfArguments { ref command, .. } if command == "SET"));
     }
 
     #[test]
     fn from_str_config_no_subcommand() {
         let err = "CONFIG".parse::<Command>().unwrap_err();
-        assert!(err.to_string().contains("requires a subcommand"));
+        assert!(matches!(err, ProtocolError::RequiredArguments { ref command, .. } if command == "CONFIG"));
     }
 
     #[test]
