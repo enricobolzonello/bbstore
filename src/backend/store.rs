@@ -3,8 +3,8 @@ use crate::{
     backend::{BackendCommand, store_backend::BBStoreBackend},
 };
 use anyhow::{Result, anyhow};
-use log::debug;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use tracing::{debug, warn};
 
 use tokio::sync::{mpsc, oneshot};
 
@@ -30,7 +30,10 @@ pub(crate) async fn actor_loop(
             }
         }
 
-        debug!("batch ready with size {}", batch.len());
+        if batch.len() == MAX_BATCH_SIZE {
+            warn!(size = MAX_BATCH_SIZE, "batch full, backpressure likely");
+        }
+        debug!(size = batch.len(), "batch ready");
 
         for cmd in batch {
             match cmd {
@@ -86,6 +89,8 @@ impl BBStore {
     pub async fn get(&self, key: ByteString) -> Result<Option<ByteString>> {
         let shard_key = self.shard_index(&key);
         let tx = self.channels[shard_key].clone();
+
+        debug!("Getting ({}) from shard {}", key, shard_key);
 
         let (ack_tx, ack_rx) = oneshot::channel();
         tx.send(BackendCommand::Read { key, reply: ack_tx }).await?;

@@ -1,11 +1,11 @@
 use anyhow::Result;
-use log::debug;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
+use tracing::{debug, error, info};
 
 use crate::types::{ByteStr, ByteString};
 
@@ -27,7 +27,7 @@ pub const DEFAULT_PORT: usize = 8080;
 pub const DEFAULT_NUM_SHARDS: usize = 4;
 pub const DEFAULT_BUFFER_SIZE: usize = 10;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BBStoreConfig {
     pub address: String,
     pub num_shards: usize,
@@ -62,34 +62,47 @@ async fn process_command(cmd: Command, store: &Arc<BBStore>) -> Result<ByteStrin
 }
 
 pub async fn run(listener: TcpListener, config: BBStoreConfig) -> Result<()> {
+    info!(address = %config.address, "server listening");
     let store = Arc::new(BBStore::new(config));
     loop {
         let (stream, addr) = listener.accept().await?;
-        debug!("Received connection from {}", addr.ip());
         let store = store.clone();
-        tokio::spawn(handle_connection(stream, store));
+        tokio::spawn(handle_connection(stream, addr, store));
     }
 }
 
-async fn handle_connection(mut stream: TcpStream, store: Arc<BBStore>) -> Result<()> {
+#[tracing::instrument(skip(stream, store), fields(peer = %addr))]
+async fn handle_connection(
+    mut stream: TcpStream,
+    addr: std::net::SocketAddr,
+    store: Arc<BBStore>,
+) -> Result<()> {
+    info!("connected");
     let (read_half, write_half) = stream.split();
     let mut writer = BufWriter::new(write_half);
     let reader = BufReader::new(read_half);
 
     let mut lines = reader.lines();
     while let Some(line) = lines.next_line().await? {
-        debug!("Received {}", line);
+        info!(cmd = %line, "received");
         let response = match Command::from_str(&line) {
             Ok(command) => match process_command(command, &store).await {
                 Ok(r) => r,
-                Err(_) => "Internal Error".into(),
+                Err(e) => {
+                    error!(error = %e, "internal error");
+                    return Err(e);
+                }
             },
-            Err(e) => format!("ERR: {}", e).into(),
+            Err(e) => {
+                debug!(error = %e, "protocol error");
+                format!("ERR: {}", e).into()
+            }
         };
         writer.write_all(response.as_bytes()).await?;
         writer.write_all(b"\r\n").await?;
         writer.flush().await?;
     }
 
+    info!("disconnected");
     Ok(())
 }

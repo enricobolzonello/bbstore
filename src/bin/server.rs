@@ -1,7 +1,11 @@
 use anyhow::Result;
-use bbstore::{BBStoreConfig, DEFAULT_ADDRESS, DEFAULT_BUFFER_SIZE, DEFAULT_CONFIG_FILEPATH, DEFAULT_NUM_SHARDS, DEFAULT_PORT};
+use bbstore::{
+    BBStoreConfig, DEFAULT_ADDRESS, DEFAULT_BUFFER_SIZE, DEFAULT_CONFIG_FILEPATH,
+    DEFAULT_NUM_SHARDS, DEFAULT_PORT,
+};
 use clap::Parser;
 use tokio::net::TcpListener;
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// BB(BasicBolzo)-Store
 /// Simple key-value store to practice single writer principles
@@ -27,6 +31,14 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .compact()
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_filter(env_filter);
+    tracing_subscriber::registry().with(fmt_layer).init();
     let args = Args::parse();
 
     let config = if let Ok(buf) = tokio::fs::read_to_string(DEFAULT_CONFIG_FILEPATH).await {
@@ -56,7 +68,6 @@ async fn main() -> Result<()> {
         }
     };
 
-    env_logger::init();
     let listener = TcpListener::bind(&config.address).await?;
     bbstore::run(listener, config).await
 }
