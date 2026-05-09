@@ -1,7 +1,10 @@
-use std::{fmt, ops::Deref};
+use std::{
+    fmt,
+    ops::{Deref, DerefMut},
+};
 
 #[derive(Hash)]
-pub(crate) struct ByteStr(pub [u8]);
+pub struct ByteStr(pub(crate) [u8]);
 
 impl ByteStr {
     #[inline]
@@ -18,7 +21,7 @@ impl ByteStr {
 }
 
 #[derive(PartialEq, Debug, Hash, Eq, Clone)]
-pub(crate) struct ByteString(pub Vec<u8>);
+pub struct ByteString(pub(crate) Vec<u8>);
 
 impl ByteString {
     #[inline]
@@ -56,10 +59,16 @@ impl AsRef<ByteStr> for ByteString {
 }
 
 impl Deref for ByteString {
-    type Target = ByteStr;
+    type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
-        ByteStr::from_bytes(&self.0)
+        &self.0
+    }
+}
+
+impl DerefMut for ByteString {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

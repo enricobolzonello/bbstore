@@ -7,12 +7,14 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, error, info};
 
-use crate::types::{ByteStr, ByteString};
+use crate::resp::Value;
+use crate::types::ByteString;
 
 mod backend;
 mod client;
 mod command;
 mod errors;
+mod resp;
 mod types;
 #[cfg(feature = "benchmarking")]
 pub use crate::backend::BBStore;
@@ -20,6 +22,7 @@ pub use crate::backend::BBStore;
 use crate::backend::BBStore;
 pub use crate::client::Client;
 pub use crate::command::Command;
+pub use crate::resp::Decoder;
 
 pub const DEFAULT_CONFIG_FILEPATH: &str = "/usr/local/etc/bbstore/bbstore.conf";
 pub const DEFAULT_ADDRESS: &str = "127.0.0.1";
@@ -34,15 +37,15 @@ pub struct BBStoreConfig {
     pub buffer_size: usize,
 }
 
-async fn process_command(cmd: Command, store: &Arc<BBStore>) -> Result<ByteString> {
-    let rtn = match cmd {
+async fn process_command(cmd: Command, store: &Arc<BBStore>) -> Result<Value> {
+    Ok(match cmd {
         Command::Get { key } => match store.get(key.into()).await? {
-            Some(value) => value,
-            None => "nil".into(),
+            Some(value) => Value::BulkString(value),
+            None => Value::Null,
         },
         Command::Set { key, value } => {
             store.insert(key.into(), value.into()).await?;
-            "ok".into()
+            Value::String("ok".into())
         }
         Command::Config(_subcommand) => {
             // for now i can assume that the command
@@ -54,15 +57,14 @@ async fn process_command(cmd: Command, store: &Arc<BBStore>) -> Result<ByteStrin
                 .await?;
             file.write(toml::to_string_pretty(&store.config())?.as_bytes())
                 .await?;
-            "ok".into()
+            Value::String("ok".into())
         }
-    };
-
-    Ok(rtn)
+    })
 }
 
 pub async fn run(listener: TcpListener, config: BBStoreConfig) -> Result<()> {
     info!(address = %config.address, "server listening");
+    debug!(config = ?config);
     let store = Arc::new(BBStore::new(config));
     loop {
         let (stream, addr) = listener.accept().await?;
@@ -95,10 +97,10 @@ async fn handle_connection(
             },
             Err(e) => {
                 debug!(error = %e, "protocol error");
-                format!("ERR: {}", e).into()
+                Value::Error(e.to_string().into())
             }
         };
-        writer.write_all(response.as_bytes()).await?;
+        writer.write_all(response.encode().as_bytes()).await?;
         writer.write_all(b"\r\n").await?;
         writer.flush().await?;
     }

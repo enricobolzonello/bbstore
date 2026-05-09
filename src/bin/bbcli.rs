@@ -1,9 +1,10 @@
 use anyhow::Result;
-use bbstore::{BBStoreConfig, Command, DEFAULT_ADDRESS, DEFAULT_CONFIG_FILEPATH, DEFAULT_PORT};
+use bbstore::{
+    BBStoreConfig, Command, DEFAULT_ADDRESS, DEFAULT_CONFIG_FILEPATH, DEFAULT_PORT, Decoder,
+};
 use clap::Parser;
 
-
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
 #[derive(Parser)]
@@ -41,15 +42,15 @@ async fn main() -> Result<()> {
         )
     };
 
-    let mut writer = TcpStream::connect(&server_address).await?;
+    let stream = TcpStream::connect(&server_address).await?;
+    let (reader, mut writer) = stream.into_split();
+
     writer
         .write_all(format!("{}\n", args.command).as_bytes())
         .await?;
 
-    let mut response = String::new();
-    BufReader::new(writer).read_line(&mut response).await?;
-
-    print!("{}", response);
+    let value = Decoder::new(reader).decode().await?;
+    print!("{}", value.to_string_pretty());
 
     Ok(())
 }

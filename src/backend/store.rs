@@ -1,5 +1,5 @@
 use crate::{
-    BBStoreConfig, ByteStr, ByteString,
+    BBStoreConfig, ByteString,
     backend::{BackendCommand, store_backend::BBStoreBackend},
 };
 use anyhow::{Result, anyhow};
@@ -102,7 +102,7 @@ impl BBStore {
         self.config.clone()
     }
 
-    fn shard_index(&self, key: &ByteStr) -> usize {
+    fn shard_index(&self, key: &[u8]) -> usize {
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
         hasher.finish() as usize % self.config.num_shards
