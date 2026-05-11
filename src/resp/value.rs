@@ -1,4 +1,4 @@
-use crate::{ByteString, resp::CRLF};
+use crate::{ByteString, Command, resp::CRLF};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Value {
@@ -97,6 +97,26 @@ impl Value {
             res.push('\n');
         }
         res
+    }
+}
+
+impl From<Command> for Value {
+    fn from(value: Command) -> Self {
+        match value {
+            Command::Get { key } => Value::Array(vec![
+                Value::BulkString("GET".into()),
+                Value::BulkString(key.into()),
+            ]),
+            Command::Set { key, value } => Value::Array(vec![
+                Value::BulkString("SET".into()),
+                Value::BulkString(key.into()),
+                Value::BulkString(value.into()),
+            ]),
+            Command::Config(args) => Value::Array(vec![
+                Value::BulkString("CONFIG".into()),
+                Value::BulkString(args.command.to_string().into()),
+            ]),
+        }
     }
 }
 

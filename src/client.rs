@@ -1,51 +1,46 @@
 use anyhow::{Result, bail};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpStream, ToSocketAddrs};
 
 use crate::Command;
+use crate::resp::{Decoder, Value};
 
 pub struct Client {
-    reader: BufReader<OwnedReadHalf>,
+    decoder: Decoder<OwnedReadHalf>,
     writer: OwnedWriteHalf,
 }
 
 impl Client {
     pub async fn connect(addr: impl ToSocketAddrs) -> Result<Self> {
         let (read, write) = TcpStream::connect(addr).await?.into_split();
-        Ok(Client { reader: BufReader::new(read), writer: write })
+        Ok(Client { decoder: Decoder::new(read), writer: write })
     }
 
-    async fn send_command(&mut self, cmd: Command) -> Result<String> {
-        self.writer.write_all(format!("{}\n", cmd).as_bytes()).await?;
-
-        let mut line = String::new();
-        let n = self.reader.read_line(&mut line).await?;
-        if n == 0 {
-            bail!("connection closed by server");
-        }
-        if let Some(msg) = line.strip_prefix("ERR ") {
-            bail!("{}", msg.trim_end_matches('\n'));
-        }
-
-        Ok(line)
+    async fn send_command(&mut self, cmd: Command) -> Result<Value> {
+        self.writer.write_all(Value::from(cmd).encode().as_bytes()).await?;
+        self.decoder.decode().await
     }
 
     pub async fn get(&mut self, key: &str) -> Result<Option<String>> {
-        let response = self.send_command(Command::Get { key: key.to_string() }).await?;
-        if response == "nil\n" {
-            Ok(None)
-        } else {
-            Ok(Some(response.trim_end_matches('\n').to_string()))
+        match self.send_command(Command::Get { key: key.to_string() }).await? {
+            Value::Null => Ok(None),
+            Value::BulkString(s) | Value::String(s) => Ok(Some(s.to_string())),
+            Value::Error(e) => bail!("{}", e),
+            other => bail!("unexpected response: {:?}", other),
         }
     }
 
     pub async fn set(&mut self, key: &str, value: &str) -> Result<()> {
-        self.send_command(Command::Set {
+        match self.send_command(Command::Set {
             key: key.to_string(),
             value: value.to_string(),
         })
-        .await?;
-        Ok(())
+        .await?
+        {
+            Value::String(_) => Ok(()),
+            Value::Error(e) => bail!("{}", e),
+            other => bail!("unexpected response: {:?}", other),
+        }
     }
 }

@@ -1,13 +1,11 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 use std::sync::Arc;
 use tokio::fs::OpenOptions;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, error, info};
 
-use crate::resp::Value;
 use crate::types::ByteString;
 
 mod backend;
@@ -23,6 +21,7 @@ use crate::backend::BBStore;
 pub use crate::client::Client;
 pub use crate::command::Command;
 pub use crate::resp::Decoder;
+pub use crate::resp::Value;
 
 pub const DEFAULT_CONFIG_FILEPATH: &str = "/usr/local/etc/bbstore/bbstore.conf";
 pub const DEFAULT_ADDRESS: &str = "127.0.0.1";
@@ -75,19 +74,27 @@ pub async fn run(listener: TcpListener, config: BBStoreConfig) -> Result<()> {
 
 #[tracing::instrument(skip(stream, store), fields(peer = %addr))]
 async fn handle_connection(
-    mut stream: TcpStream,
+    stream: TcpStream,
     addr: std::net::SocketAddr,
     store: Arc<BBStore>,
 ) -> Result<()> {
     info!("connected");
-    let (read_half, write_half) = stream.split();
+    let (read_half, write_half) = stream.into_split();
     let mut writer = BufWriter::new(write_half);
-    let reader = BufReader::new(read_half);
+    let mut decoder = Decoder::with_buf_bulk(read_half);
 
-    let mut lines = reader.lines();
-    while let Some(line) = lines.next_line().await? {
-        info!(cmd = %line, "received");
-        let response = match Command::from_str(&line) {
+    loop {
+        let value = match decoder.decode().await {
+            Ok(v) => v,
+            Err(e) => {
+                // TODO: instead of just breaking here i can handle graceful shutdown
+                error!("{}", e);
+                break;
+            }
+        };
+
+        info!(cmd = ?value, "received");
+        let response = match Command::try_from(value) {
             Ok(command) => match process_command(command, &store).await {
                 Ok(r) => r,
                 Err(e) => {
@@ -101,7 +108,6 @@ async fn handle_connection(
             }
         };
         writer.write_all(response.encode().as_bytes()).await?;
-        writer.write_all(b"\r\n").await?;
         writer.flush().await?;
     }
 

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bbstore::{
-    BBStoreConfig, Command, DEFAULT_ADDRESS, DEFAULT_CONFIG_FILEPATH, DEFAULT_PORT, Decoder,
+    BBStoreConfig, Command, DEFAULT_ADDRESS, DEFAULT_CONFIG_FILEPATH, DEFAULT_PORT, Decoder, Value,
 };
 use clap::Parser;
 
@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     let (reader, mut writer) = stream.into_split();
 
     writer
-        .write_all(format!("{}\n", args.command).as_bytes())
+        .write_all(&Value::from(args.command).encode())
         .await?;
 
     let value = Decoder::new(reader).decode().await?;
